@@ -1,8 +1,13 @@
+"""
+Module 1 of the Zrive Data Science course. Consists of calling an api to collect
+weather information about 3 cities and then plot those variables
+"""
+
 from typing import Dict
 from urllib.parse import urlencode
 import sys
 import time
-# import pandas as pd
+import pandas as pd
 import json
 import requests
 
@@ -27,35 +32,13 @@ NUM_ATTEMPTS = 5
 TIMEOUT_LIMIT = 10
 
 
-# TODO Check if it's better to use logger (.info / .Warning)
+# TODO Check difference with logger (.info / .Warning)
 def _print_2_stderr(*strings: str):
     """
     Private function to avoid the repetition of code
     in order to print debug info in the stderr
     """
     print(*strings, file=sys.stderr)
-
-
-def get_data_meteo_api(city: Dict[str, float]):
-    """"
-    Responsible of getting the climate information about the city passed
-    as an argument from the API.
-    """
-
-    url_params = {
-        "latitude": city["latitude"],
-        "longitude": city["longitude"],
-        "start_date": START_DATE,
-        "end_date": END_DATE,
-        "models": MODELS,
-        "daily": VARIABLES,
-    }
-
-    # safe = "," avoids possible problems due to the comma separated values
-    # from the models string
-    url_ready = API_URL + urlencode(url_params, safe=",")
-
-    return request_with_backoff(url_ready)
 
 
 def request_with_backoff(url: str):
@@ -72,7 +55,7 @@ def request_with_backoff(url: str):
     call_count = 0
     time_2_wait = 1
 
-    for call_count in range(NUM_ATTEMPTS-1):
+    for call_count in range(NUM_ATTEMPTS - 1):
         try:
             # By setting a timeout we will avoid getting stuck forever
             res = requests.get(url, timeout=TIMEOUT_LIMIT)
@@ -116,9 +99,87 @@ def request_with_backoff(url: str):
     return -1
 
 
+def get_data_meteo_api(city: Dict[str, float]):
+    """
+    Responsible of getting the climate information about the city passed
+    as an argument from the API.
+    """
+
+    url_params = {
+        "latitude": city["latitude"],
+        "longitude": city["longitude"],
+        "start_date": START_DATE,
+        "end_date": END_DATE,
+        "models": MODELS,
+        "daily": VARIABLES,
+    }
+
+    # safe = "," avoids possible problems due to the comma separated values
+    # from the models string
+    url_ready = API_URL + urlencode(url_params, safe=",")
+
+    return request_with_backoff(url_ready)
+
+
+def calculate_mean_stdev_of_models(data: pd.DataFrame):
+    """
+    Function in charge of calculating the mean and the standard devaiton of
+    the dataframe passed as an argument
+    """
+    # We create another dataframe in which we will have the mean and stdev of each model
+    mean_stdev_dataframe = data[["city", "time"]].copy()
+    for variable in VARIABLES.split(","):
+        col_groups = []
+
+        # First we group all the columns of each variable-model
+        for col in data.columns:
+            if col.startswith(variable):
+                col_groups.append(col)
+
+        # We compute both the mean and the stdev and include it in the new dataframe
+        # Check the axis=1
+        mean_stdev_dataframe[f"{variable}_mean"] = data[col_groups].mean(axis=1)
+        mean_stdev_dataframe[f"{variable}_stdev"] = data[col_groups].std(axis=1)
+    return mean_stdev_dataframe
+
+
+# TODO
+def change_daily_2_yearly(data: pd.DataFrame):
+    """
+    In charge of adjusting the given dataframe so that the mean is
+    yearly rather than daily
+    """
+    raise NotImplementedError
+
+
+# TODO
+def plot_variables(data: pd.DataFrame):
+    """
+    Plots the variables declared in the VARIABLES macro
+    from the dataframe passed as a parameter
+    """
+    raise NotImplementedError
+
+
 def main():
-    for city in COORDINATES:
-        print(get_data_meteo_api(COORDINATES[city]))
+    """
+    Main
+    """
+    # Usually better in terms of performance
+    data = []
+    # For each city, we will call the api to collect it's info and append it to data
+    for city in COORDINATES:  # Alt: for city, coords in COORDINATES.items():
+        city_data = get_data_meteo_api(COORDINATES[city])
+
+        # -1 means the attempts limit has been reached
+        if city_data == -1:
+            return 1
+
+        data.append(pd.DataFrame(city_data["daily"]).assign(city=city))
+
+    final_data = pd.concat(data)
+    final_data = calculate_mean_stdev_of_models(final_data)
+    print(final_data)
 
 
 if __name__ == "__main__":
